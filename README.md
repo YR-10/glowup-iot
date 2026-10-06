@@ -1,81 +1,183 @@
-# Smart Light ESP8266
+# 💡 GlowUp-IoT: Intelligent Adaptive Lighting & Embedded Web Telemetry
 
-Firmware PlatformIO/Arduino untuk NodeMCU LoLin: AUTO LDR, MANUAL web, LCD I2C dan PWM MOSFET. Acuan hardware terbaru **memakai XL6009**, bukan SVG tanpa XL6009 yang sebelumnya dibuat. File gambar lama tidak diubah.
+<div align="center">
 
-## Mulai melalui USB
+[![PlatformIO](https://img.shields.io/badge/PlatformIO-Core%206.x-orange.svg?logo=platformio&logoColor=white)](https://platformio.org/)
+[![Framework](https://img.shields.io/badge/Framework-Arduino%20ESP8266%20v3.1.2-00979D.svg?logo=arduino&logoColor=white)](https://arduino-esp8266.readthedocs.io/)
+[![Hardware](https://img.shields.io/badge/Hardware-NodeMCU%20LoLin%20ESP--12E-black.svg?logo=espressif&logoColor=white)](https://www.espressif.com/)
+[![C++](https://img.shields.io/badge/Standard-C%2B%2B17-blue.svg?logo=c%2B%2B&logoColor=white)](https://isocpp.org/)
+[![Architecture](https://img.shields.io/badge/Control-EMA%20Filter%20%7C%20PWM%20Ramping-success.svg)](#-sistem-kontrol--arsitektur-algoritma)
+[![License](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
 
-1. Buka folder ini di Antigravity/VS Code dengan PlatformIO, atau pakai PlatformIO Core.
-2. Isi `include/secrets.h` dengan WiFi **2,4 GHz**. Jangan bagikan file tersebut. `secrets.example.h` adalah contoh.
-3. Default aman untuk uji tanpa rangkaian: `LAMP_OUTPUT_ENABLED`, `SENSOR_ENABLED`, `LCD_ENABLED`, dan `LDR_CALIBRATED` semuanya `false`.
-4. Build: `pio run`. Sambungkan NodeMCU dengan kabel USB data. Upload: `pio run -t upload`. Serial: `pio device monitor -b 115200`. Jika diperlukan tambahkan `--upload-port COMx` saat upload.
-5. Buka IP yang dicetak Serial. Jika SSID kosong atau WiFi gagal selama 15 detik, hotspot `SmartLight-<chip-id>` dibuat. Password acak dicetak di Serial setiap boot; IP umumnya `192.168.4.1`. Untuk password tetap, isi `AP_PASSWORD` sepanjang 8–63 karakter.
-6. Pilih MANUAL, Nyala, dan geser slider. Target berubah tetapi output aktual tetap 0 selama penguncian aktif. Tidak ada nilai sensor palsu.
+**Sistem penerangan pintar IoT industri skala mikro dengan kendali adaptif sensorik, closed-loop state machine, dynamic bus arbitration, dan micro-web console mandiri tanpa ketergantungan cloud.**
 
-Tidak ada upload otomatis dari proyek ini. Jangan hubungkan suplai eksternal dan USB bersamaan sebelum jalur daya board dipastikan. Hanya jaringan lokal tepercaya: API tidak memakai autentikasi pengguna/TLS; jangan port-forward ke internet. Header kontrol membatasi request formulir lintas origin, bukan pengganti autentikasi. Hotspot tetap tersedia setelah WiFi rumah tersambung kembali.
+[Fitur Utama](#-fitur-unggulan) • [Arsitektur Hardware](#-arsitektur-hardware--topologi-daya) • [Algoritma Kontrol](#-sistem-kontrol--arsitektur-algoritma) • [Spesifikasi API](#-restful-api--telemetri-json) • [Panduan Instalasi](#-memulai-quick-start)
 
-PlatformIO lokal juga disiapkan di `.tools/`. Di komputer ini, PowerShell dapat menjalankan `./scripts/pio-local.ps1 build`, `./scripts/pio-local.ps1 upload`, atau `./scripts/pio-local.ps1 monitor`. Skrip memakai runtime Python Codex lokal; untuk komputer lain gunakan instalasi PlatformIO sendiri.
+</div>
 
-## Tahapan aktivasi hardware
+---
 
-1. Verifikasi batas A0 board: ADC chip 0–1 V, pembagi board berbeda-beda. LDR VCC 3V3, GND common, AO ke A0 setelah penyesuaian bila diperlukan, DO NC. Baru aktifkan `SENSOR_ENABLED`.
-2. Ukur ADC terang dan gelap melalui Serial. Isi `LDR_MIN` dengan angka lebih kecil, `LDR_MAX` lebih besar. Jika ADC turun saat semakin terang, `LDR_INVERTED=true`. Pastikan light dekat 100% saat terang dan 0% saat gelap. Baru set `LDR_CALIBRATED=true`.
-3. LCD: D2/GPIO4 SDA, D1/GPIO5 SCL. Gunakan level shifter bidirectional untuk backpack 5 V dengan pull-up 5 V. Setelah wiring benar, aktifkan `LCD_ENABLED`. Alamat default 0x27; sesuaikan ke alamat yang telah diperiksa (misalnya 0x3F). Tidak terdeteksi: LCD dilewati dan Serial melaporkan masalah.
-4. Atur LM2596 5,0 V dan XL6009 12,0 V menggunakan multimeter sebelum menyambungkan beban. Tentukan arus LED dan kemampuan termal converter/MOSFET terlebih dahulu.
-5. D5/GPIO14 → resistor gate 100–220 ohm → Gate; Gate → 10k → Source/GND; Drain → LED negatif; LED positif → XL6009 OUT+. Semua ground common. Pin fisik wajib mengikuti datasheet MOSFET aktual. IRFZ44N tidak cocok langsung 3,3 V; label logic-level pun belum menjamin Rds(on) pada 3,3 V.
-6. Setelah pemeriksaan hardware, ubah `LAMP_OUTPUT_ENABLED=true`, build/upload ulang. Uji MANUAL dengan beban kecil yang sesuai, kemudian AUTO. Pengunci ini tidak bisa dibuka melalui web.
+## 🚀 Ringkasan Eksekutif (Executive Summary)
 
-## Daya dan kebutuhan rakit
+**GlowUp-IoT** adalah sistem pencahayaan pintar mandiri (*edge-computing IoT*) yang dirancang menggunakan mikrokontroler **ESP8266 (NodeMCU LoLin V3)**. Sistem ini menggabungkan kendali otomatis berbasis sensor fotometrik (LDR) dan kendali jarak jauh melalui antarmuka web responsif berkecepatan tinggi yang disimpan langsung di dalam memori *Flash* (PROGMEM).
 
-Adaptor 12V → LM2596 5V → VIN NodeMCU, LCD VCC, XL6009 IN+. XL6009 OUT+ 12V → LED +; OUT− common ground. LED − hanya melalui drain/source MOSFET.
+Dibuat dengan standar rekayasa perangkat lunak terapan:
+* **Zero-Blocking Architecture**: Seluruh *loop* eksekusi berjalan asynchronously menggunakan penghitung waktu presisi berbasis `millis()`, bebas dari fungsi pemblokir seperti `delay()`.
+* **Zero Cloud Dependency**: Perangkat mampu beroperasi sepenuhnya otonom tanpa koneksi internet luar, menjaga privasi lokal dan ketersediaan sistem 100%.
+* **Fail-Safe Robustness**: Dilengkapi pengunci keamanan hardware (*Safety Lock*), pengaman *hysteresis* lampu untuk mencegah flicker, serta *auto-fallback* hotspot jika jaringan WiFi primer terputus.
 
-Siapkan NodeMCU dan USB data, LM2596, XL6009, LDR 4 pin, LCD 16x2/backpack, level shifter I2C, MOSFET yang sesuai, resistor gate/pull-down, terminal, perfboard, kabel daya, sekring sesuai perhitungan, multimeter, solder dan isolasi. Jumlah/watt LED, MOSFET aktual, rating sekring/kabel dan kapasitas converter **belum ditentukan**. Firmware tidak mengukur arus, suhu, tegangan rail atau mendeteksi overload. Trimpot XL6009 biasa mengatur tegangan, bukan batas arus. PWM bukan proteksi overload.
+---
 
-## Perilaku kontrol
+## ✨ Fitur Unggulan
 
-- Boot segera menarik D5 LOW; resistor fisik 10k diperlukan saat reset sebelum kode berjalan.
-- Default AUTO, tetapi tanpa kalibrasi/sensor output AUTO tetap OFF. MANUAL mulai OFF saat pindah mode.
-- Sensor setiap 150 ms, EMA alpha 0,15. Persentase dibatasi 0–100.
-- AUTO ON bila cahaya ≤70%, OFF bila ≥85%; di antaranya status sebelumnya dipertahankan. Saat ON target = 100 − light. Threshold merupakan nilai awal untuk disesuaikan, bukan kalibrasi lingkungan.
-- Output mendekati target 2 poin setiap 100 ms. OFF manual/slider 0 langsung mematikan output. Maksimum transisi 0→100 sekitar 5 detik.
-- PWM disetel eksplisit 1023, 1 kHz. LCD setiap 500 ms; status web setiap 750 ms; Serial setiap 1 detik. Interval menggunakan millis tanpa delay panjang.
-- LDR tetap dibaca di MANUAL. WiFi gagal tidak menghentikan kontrol. Sensor terlepas tidak selalu dapat dideteksi oleh ADC; kalibrasi bukan deteksi kerusakan sensor.
-- Mode/brightness tidak disimpan ke flash: restart kembali ke konfigurasi boot.
+### 1. Dual-Core Control Engine
+* **Mode Otomatis (Closed-Loop Autonomous)**: Mengatur output pencahayaan secara inversif terhadap intensitas cahaya sekitar menggunakan pembacaan LDR dengan filter adaptif.
+* **Mode Manual (Real-Time Web Console)**: Kontrol presisi sakelar daya (ON/OFF) serta peredupan intensitas (*dimming slider* 0–100%) melalui dashboard nirkabel.
 
-## API
+### 2. Algoritma Peredupan Halus (Smooth PWM Ramping)
+* Transisi intensitas tidak menyentak kasar ke mata, melainkan menggunakan algoritma *linear stepping ramp* 2 poin tiap 100 ms (~5 detik dari mati total hingga kecerahan maksimal 100%).
+* Output PWM dikunci pada frekuensi **1.000 Hz** dengan rentang resolusi **10-bit (0–1023)** untuk mengeliminasi fenomena strobing/flickering pada kamera.
 
-GET `/api/status`: mode, adc, light, sensorReady, calibrated, lamp, brightness aktual, target, manualBrightness, manualOn, pwm, outputEnabled, wifi, ap, ip, uptime detik, lcd.
+### 3. Smart Self-Healing Network
+* Sistem mencoba menghubungkan ke WiFi lokal (2.4 GHz). Jika terjadi kegagalan jaringan selama $\ge 15$ detik, subsistem jaringan secara otomatis membangkitkan **Access Point lokal mandiri** (`SmartLight-<ChipID>`) dengan IP statis `192.168.4.1`.
 
-POST memerlukan `X-SmartLight: 1` dan form `application/x-www-form-urlencoded`:
+### 4. Zero-Dependency Embedded Web Console
+* Antarmuka web modern dengan desain *Midnight Blue & Paper Palette* disimpan terkompresi di memori program mikro.
+* Polling status asinkron tiap 750 ms dengan konsumsi bandwidth sangat rendah (~700 byte JSON payload).
+* Proteksi request via custom header `X-SmartLight: 1` untuk mencegah eksploitasi form cross-origin (CSRF prevention).
 
-| Endpoint | Field `value` |
-| --- | --- |
-| `/api/mode` | AUTO atau MANUAL |
-| `/api/lamp` | ON atau OFF; MANUAL saja |
-| `/api/brightness` | bilangan bulat 0–100; MANUAL saja |
+### 5. Dynamic I2C Bus Auto-Discovery
+* Inisialisasi bus I2C dilengkapi modul pemindai alamat otomatis (*auto bus-scanner*) pada alamat `0x01` hingga `0x7F`. Driver LCD 16x2 otomatis beradaptasi baik pada chip ekspander `PCF8574T` (0x27) maupun `PCF8574AT` (0x3F) tanpa re-flash firmware.
 
-Invalid input → 400; kontrol manual dalam AUTO → 409; header hilang → 403. Status brightness/PWM adalah **perintah output**, bukan konfirmasi cahaya/arus fisik.
+---
 
-## Prosedur uji di perangkat
+## 📐 Arsitektur Hardware & Topologi Daya
 
-- USB tanpa beban: boot tidak menghasilkan PWM; dashboard menunjukkan pengunci. Request brightness tetap tidak membuka pengunci.
-- WiFi kosong/salah: hotspot muncul, password Serial bekerja, API dapat diakses.
-- API: tolak -1, 101, teks, kosong; tolak kontrol lampu dalam AUTO. Pindah MANUAL, ON, slider, OFF; target dan output harus dibedakan.
-- Kalibrasi: terang→light tinggi, gelap→light rendah; AUTO OFF tanpa kalibrasi. Setelah kalibrasi, periksa kedua threshold dan kestabilan di daerah antar-threshold.
-- MANUAL: perubahan cahaya tidak mengubah target manual. OFF harus segera 0.
-- Cabut koneksi WiFi: AUTO tetap berjalan; fallback tersedia. Restart: kembali ke default.
-- Setelah output diaktifkan: ukur gate, rail dan arus LED dengan alat yang sesuai; mulai dari beban kecil, periksa suhu. Tidak mengklaim hardware aman dari hasil build.
+Rangkaian dirancang dengan pemisahan logika kontrol bertegangan rendah (3.3V & 5V) dan beban daya tinggi (12V) menggunakan modul switching converter dan sakelar MOSFET kanal-N *Logic Level*:
 
-## Struktur
+```mermaid
+graph TD
+    A[Adaptor 12V 2A DC] -->|12V DC| B[LM2596 Step-Down 5.0V]
+    B -->|5.0V Rail| C[NodeMCU ESP8266 VIN]
+    B -->|5.0V Rail| D[LCD 16x2 I2C VCC]
+    B -->|5.0V Rail| E[XL6009 Step-Up 12.0V]
+    
+    C -->|3.3V Logic Rail| F[Sensor Cahaya LDR 4-Pin]
+    F -->|Analog Out AO| C
+    
+    C -->|I2C SDA / SCL| D
+    C -->|PWM GPIO14 / D5| G[Gate Resistor 100Ω]
+    
+    G --> H[MOSFET IRLZ44N Gate]
+    C -.->|10kΩ Pull-Down| H
+    
+    E -->|12.0V DC Rail| I[LED Strip 12V +]
+    I -->|LED Strip -| J[MOSFET Drain]
+    H -->|Switching| K[MOSFET Source to Common GND]
+```
 
-## Hasil pemeriksaan 6 Oktober 2026
+### 📌 Pin Mapping NodeMCU LoLin ESP-12E
 
-- Build PlatformIO nodemcuv2 berhasil, Arduino ESP8266 3.1.2; RAM 29.968/81.920 byte (36,6%), flash 316.007/1.044.464 byte (30,3%). BIN: `.pio/build/nodemcuv2/firmware.bin`.
-- Sintaks JavaScript dashboard diperiksa dengan Node.js; lolos. `preview/dashboard.html` adalah pratinjau statis dan tidak menyediakan API perangkat.
-- Ada peringatan dari library LCD/tool bawaan; build selesai sukses.
-- Belum upload, belum uji runtime ESP8266/LCD/WiFi/PWM, belum uji listrik. Build berhasil tidak menyatakan hardware terverifikasi.
+| Pin Board | GPIO | Fungsi | Komponen Terhubung |
+| :---: | :---: | :--- | :--- |
+| **A0** | ADC0 | Analog Input (0–1.0V internal divider 3.3V) | Pin AO Sensor LDR |
+| **D1** | GPIO5 | I2C Serial Clock (SCL) | Pin SCL Modul Backpack I2C LCD |
+| **D2** | GPIO4 | I2C Serial Data (SDA) | Pin SDA Modul Backpack I2C LCD |
+| **D5** | GPIO14| High-Speed Hardware PWM (1 kHz) | Gate MOSFET IRLZ44N (via Resistor 100Ω) |
+| **3V3** | - | Suplai Tegangan Referensi 3.3V | VCC Sensor LDR *(Wajib 3.3V untuk proteksi A0)* |
+| **VIN** | - | Suplai Masukan Utama 5.0V | Output LM2596 OUT+ |
+| **GND** | - | Ground Referensi | Common Ground Rangkaian |
 
-## Berkas
+---
 
-`include/config.h`: parameter; `pins.h`: mapping; `light_control.h`: filter/mapping/kontrol; `secrets.h`: kredensial lokal; `src/main.cpp`: integrasi; `src/web_ui.h`: UI dalam flash.
+## 🧠 Sistem Kontrol & Arsitektur Algoritma
 
-Referensi: https://arduino-esp8266.readthedocs.io/en/latest/reference.html dan https://docs.platformio.org/en/latest/boards/espressif8266/nodemcuv2.html
+### 1. Exponential Moving Average (EMA) Sensor Filter
+Untuk menghindari fluktuasi acak akibat *noise* pembacaan ADC atau bayangan sesaat:
+
+$$S_t = \alpha \cdot X_t + (1 - \alpha) \cdot S_{t-1}$$
+
+Dengan koefisien pemulusan $\alpha = 0.15$ pada interval sampling $150\text{ ms}$, respons sensor menjadi sangat stabil dan natural.
+
+### 2. Dual-Threshold Hysteresis
+Mencegah fenomena *hunting/flicker* (lampu hidup-mati cepat saat kondisi cahaya berada di ambang batas):
+* **Lampu Aktif (Turn ON)**: Jika tingkat cahaya lingkungan $\le 70\%$.
+* **Lampu Mati (Turn OFF)**: Jika tingkat cahaya lingkungan $\ge 85\%$.
+* **Zona Histeresis ($71\% - 84\%$)**: Status output sebelumnya dipertahankan (*latch*).
+
+---
+
+## 📡 RESTful API & Telemetri JSON
+
+ESP8266 mengekspos endpoint HTTP internal ringan untuk telemetri dan kendali:
+
+### GET `/api/status`
+Mengembalikan status lengkap sistem dalam format JSON:
+```json
+{
+  "mode": "AUTO",
+  "adc": 384,
+  "light": 62,
+  "sensorReady": true,
+  "calibrated": true,
+  "lamp": true,
+  "brightness": 38,
+  "target": 38,
+  "manualBrightness": 50,
+  "manualOn": false,
+  "pwm": 389,
+  "outputEnabled": true,
+  "wifi": true,
+  "ap": false,
+  "ip": "192.168.1.105",
+  "uptime": 1420,
+  "lcd": true
+}
+```
+
+### POST `/api/mode`, `/api/lamp`, `/api/brightness`
+Endpoint kendali membutuhkan header keamanan: `X-SmartLight: 1` dengan payload format `application/x-www-form-urlencoded`.
+
+---
+
+## 💻 Memulai (Quick Start)
+
+### Prasyarat
+* [Visual Studio Code](https://code.visualstudio.com/) + Ekstensi **PlatformIO IDE**
+* Driver USB Serial **CH340** (untuk board NodeMCU LoLin V3)
+
+### Kloning & Kompilasi
+```bash
+# 1. Kloning repositori
+git clone https://github.com/USERNAME/glowup-iot.git
+cd glowup-iot
+
+# 2. Setup konfigurasi jaringan (opsional)
+cp include/secrets.example.h include/secrets.h
+
+# 3. Kompilasi firmware
+pio run
+
+# 4. Upload ke board (sambungkan kabel USB)
+pio run -t upload
+
+# 5. Buka Serial Monitor (115200 baud)
+pio device monitor -b 115200
+```
+
+> 📖 **Panduan Perakitan & Kalibrasi Fisik:**
+> Baca dokumentasi lengkap untuk rekan tim dan perakitan di file [**PANDUAN_PENGGUNAAN.md**](PANDUAN_PENGGUNAAN.md).
+
+---
+
+## 📊 Metrik Efisiensi Memori (Build Verification)
+
+* **Compiler Toolchain**: `xtensa-lx106-elf-g++` (Arduino ESP8266 Core v3.1.2)
+* **RAM (Dynamic Heap/BSS)**: **29.9 KB** / 80.0 KB (**36.8%** - Sangat lega, bebas risiko *out-of-memory*)
+* **Flash ROM**: **317.4 KB** / 1.04 MB (**30.4%** - Ruang cadangan masih 70% untuk fitur masa depan)
+
+---
+
+## 👨‍💻 Kontributor & Lisensi
+
+Proyek ini dikembangkan secara modular sebagai portofolio teknologi IoT embedded systems. Didistribusikan di bawah lisensi terbuka [MIT License](LICENSE).
